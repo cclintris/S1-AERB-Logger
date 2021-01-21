@@ -44,3 +44,6 @@ S1 Logger Module
 - func `NewWithOptions(options LogOptions) *Logger`
   
     Generate a singleton logger and set custom options.
+- func `NewAlways(options LogOptions) *Logger`
+
+    Always create and return a whole new logger instancee and set custom options.
