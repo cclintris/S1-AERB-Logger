@@ -36,3 +36,5 @@ S1 Logger Module
   Generate a singleton logger and set default options. default options is (`OPT_HAS_REPORT_CALLER|OPT_HAS_SHORT_CALLER`)
 - func `NewWithOptions(options LogOptions) *Logger`
   Generate a singleton logger and set custom options.
+- func `NewAlways(options LogOptions) *Logger`
+  Always create and return a whole new logger instancee and set custom options.

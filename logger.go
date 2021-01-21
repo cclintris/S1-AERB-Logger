@@ -61,49 +61,60 @@ func NewWithOptions(options LogOptions) *Logger {
 	return new(options)
 }
 
+// NewAlways is a function to obtain a total new instance of Logger with options.
+func NewAlways(options LogOptions) *Logger {
+	return newAlways(options)
+}
+
 func new(_options LogOptions) *Logger {
 	// Execute code block once.
 	once.Do(func() {
-		logger = &Logger{
-			Logger: logrus.Logger{
-				Out:          os.Stderr,
-				Hooks:        make(logrus.LevelHooks),
-				Level:        logrus.InfoLevel,
-				ExitFunc:     os.Exit,
-				ReportCaller: false,
-			},
-			Options: _options,
-		}
-		// Set json format.
-		logger.SetFormatter(&logrus.JSONFormatter{
-			CallerPrettyfier: logger.callerPrettyfier,
-		})
-
-		// Set Hookers
-		logger.Hooks.Add(LoggerHook{Logger: logger})
-
-		//
-		if logger.Options&OPT_HAS_REPORT_CALLER > 0 {
-			logger.SetReportCaller(true)
-		}
-
-		// Set log level.
-		l, err := logrus.ParseLevel(os.Getenv("LOG_LEVEL"))
-		if nil != err {
-			l = logrus.InfoLevel
-		}
-		logger.SetLevel(l)
-
-		/* TODO: use goroutine id or thread id is better.
-		// Generate logId
-		logId := GenerateRunId() //
-		instance.WithFields(logrus.Fields{"logId": logId})
-		*/
-
+		logger = newAlways(_options)
 	})
 	return logger
 }
 
+func newAlways(_options LogOptions) *Logger {
+	_logger := &Logger{
+		Logger: logrus.Logger{
+			Out:          os.Stderr,
+			Hooks:        make(logrus.LevelHooks),
+			Level:        logrus.InfoLevel,
+			ExitFunc:     os.Exit,
+			ReportCaller: false,
+		},
+		Options: _options,
+	}
+	// Set json format.
+	_logger.SetFormatter(&logrus.JSONFormatter{
+		CallerPrettyfier: _logger.callerPrettyfier,
+	})
+
+	// Set Hookers
+	_logger.Hooks.Add(LoggerHook{Logger: _logger})
+
+	//
+	if _logger.Options&OPT_HAS_REPORT_CALLER > 0 {
+		_logger.SetReportCaller(true)
+	}
+
+	// Set log level.
+	l, err := logrus.ParseLevel(os.Getenv("LOG_LEVEL"))
+	if nil != err {
+		l = logrus.InfoLevel
+	}
+	_logger.SetLevel(l)
+
+	/* TODO: use goroutine id or thread id is better.
+	// Generate logId
+	logId := GenerateRunId() //
+	instance.WithFields(logrus.Fields{"logId": logId})
+	*/
+
+	return _logger
+}
+
+// GenerateRunId ...
 func GenerateRunId() string {
 	rand.Seed(time.Now().UnixNano())
 	letterRunes := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
