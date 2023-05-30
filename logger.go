@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -163,12 +164,18 @@ func (l *Logger) parseResource(resource string) (string, string) {
 
 // convert map to string and separated by ','.
 func (l *Logger) createKeyValuePairs(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	b := &bytes.Buffer{}
-	for key, value := range m {
+	for _, k := range keys {
 		if b.Len() > 0 {
 			fmt.Fprintf(b, ", ")
 		}
-		fmt.Fprintf(b, "%s:%s", key, value)
+		fmt.Fprintf(b, "%s:%s", k, m[k])
 	}
 	return b.String()
 }
@@ -177,6 +184,12 @@ func (l *Logger) createKeyValuePairs(m map[string]string) string {
 func (l *Logger) SetResource(resource string) *Logger {
 	t, id := l.parseResource(resource)
 	l.Resource[t] = id
+	return l
+}
+
+// UnsetResource set resource.
+func (l *Logger) UnsetResource(resourceType string) *Logger {
+	delete(l.Resource, resourceType)
 	return l
 }
 

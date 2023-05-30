@@ -17,11 +17,13 @@ import (
 const (
 	DeviceResource string = "D:3C62F006E1D1-2110DMM000018"
 	UserResource   string = "U:001b1607-ca91-4929-8287-ac9eb1aca221"
+	RegionResource string = "R:85abbc66-0cfe-47bd-a4eb-d6feca985567"
 	Category       string = "MyCategory"
 )
 
 var buf bytes.Buffer
 var logLevel string = "debug"
+var expectedResources string = ""
 
 func TestMain(m *testing.M) {
 	// call flag.Parse() here if TestMain uses flags
@@ -38,7 +40,9 @@ func TestMain(m *testing.M) {
 func TestNewLogger(t *testing.T) {
 
 	logger := s1logger.New()
-	logger.SetResource(UserResource).SetResource(DeviceResource).SetCategory(Category)
+	logger.SetResource(RegionResource).SetResource(UserResource).SetResource(DeviceResource).SetCategory(Category)
+	logger.UnsetResource("R")
+	expectedResources = fmt.Sprintf("%s, %s", DeviceResource, UserResource)
 
 	var jq *gojsonq.JSONQ
 
@@ -79,7 +83,7 @@ func testTrace(t *testing.T, msg string) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.TraceLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), expectedResources)
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -96,7 +100,7 @@ func testDebug(t *testing.T, msg string) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.DebugLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), expectedResources)
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -113,7 +117,7 @@ func testInfo(t *testing.T, msg string) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.InfoLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), expectedResources)
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -129,7 +133,7 @@ func subfun(t *testing.T) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.InfoLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), expectedResources)
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -147,7 +151,7 @@ func goroutine(t *testing.T, done chan<- struct{}) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.InfoLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), expectedResources)
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -165,6 +169,7 @@ func TestNewAlwaysLogger(t *testing.T) {
 	// logger is singleton logger.
 	logger := s1logger.New()
 	logger.SetResource(UserResource).SetResource(DeviceResource).SetCategory(Category)
+	expectedResources = fmt.Sprintf("%s, %s", DeviceResource, UserResource)
 
 	// test TRACE level
 	testTrace(t, "log w/ resource, TRACE level")
@@ -185,6 +190,7 @@ func TestResources(t *testing.T) {
 
 	logger := s1logger.New()
 	logger.SetResource(UserResource).SetResource(DeviceResource).SetCategory(Category)
+	expectedResources = fmt.Sprintf("%s, %s", DeviceResource, UserResource)
 
 	var jq *gojsonq.JSONQ
 
