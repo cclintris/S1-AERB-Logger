@@ -2,6 +2,7 @@ package logger_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"testing"
 
@@ -14,8 +15,9 @@ import (
 )
 
 const (
-	Resource string = "D:123456"
-	Category string = "MyCategory"
+	DeviceResource string = "D:3C62F006E1D1-2110DMM000018"
+	UserResource   string = "U:001b1607-ca91-4929-8287-ac9eb1aca221"
+	Category       string = "MyCategory"
 )
 
 var buf bytes.Buffer
@@ -36,7 +38,7 @@ func TestMain(m *testing.M) {
 func TestNewLogger(t *testing.T) {
 
 	logger := s1logger.New()
-	logger.SetResource(Resource).SetCategory(Category)
+	logger.SetResource(UserResource).SetResource(DeviceResource).SetCategory(Category)
 
 	var jq *gojsonq.JSONQ
 
@@ -77,7 +79,7 @@ func testTrace(t *testing.T, msg string) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.TraceLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), Resource)
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -94,7 +96,7 @@ func testDebug(t *testing.T, msg string) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.DebugLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), Resource)
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -111,7 +113,7 @@ func testInfo(t *testing.T, msg string) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.InfoLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), Resource)
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -127,7 +129,7 @@ func subfun(t *testing.T) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.InfoLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), Resource)
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -145,7 +147,7 @@ func goroutine(t *testing.T, done chan<- struct{}) {
 	if l, _ := logrus.ParseLevel(logLevel); l >= logrus.InfoLevel {
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
 		assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
-		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), Resource)
+		assert.Equal(t, jq.Reset().Find(s1logger.RESOURCE), fmt.Sprintf("%s, %s", UserResource, DeviceResource))
 		assert.Equal(t, jq.Reset().Find(s1logger.CATEGORY), Category)
 	} else {
 		assert.Empty(t, buf.String())
@@ -162,7 +164,7 @@ func TestNewAlwaysLogger(t *testing.T) {
 
 	// logger is singleton logger.
 	logger := s1logger.New()
-	logger.SetResource(Resource).SetCategory(Category)
+	logger.SetResource(UserResource).SetResource(DeviceResource).SetCategory(Category)
 
 	// test TRACE level
 	testTrace(t, "log w/ resource, TRACE level")
@@ -177,4 +179,38 @@ func TestNewAlwaysLogger(t *testing.T) {
 	_buf.Reset()
 	_logger.Debug("always new logger, DEBUG level")
 	assert.Empty(t, _buf.String())
+}
+
+func TestResources(t *testing.T) {
+
+	logger := s1logger.New()
+	logger.SetResource(UserResource).SetResource(DeviceResource).SetCategory(Category)
+
+	var jq *gojsonq.JSONQ
+
+	// test TRACE level
+	testTrace(t, "log w/ resource, TRACE level")
+
+	// test DEBUG level
+	testDebug(t, "log w/ resource, DEBUG level")
+
+	// test INFO level
+	testInfo(t, "log w/ resource, INFO level")
+
+	subfun(t)
+
+	// go routine
+	done := make(chan struct{})
+	go goroutine(t, done)
+	<-done
+
+	logger.ClearAll()
+
+	buf.Reset()
+	logger.Infof("log w/o resource")
+	jq = gojsonq.New().JSONString(buf.String())
+	assert.NotEmpty(t, jq.Reset().Find(s1logger.FILE))
+	assert.NotEmpty(t, jq.Reset().Find(s1logger.FUNCTION))
+	assert.Nil(t, jq.Reset().Find(s1logger.RESOURCE))
+	assert.Nil(t, jq.Reset().Find(s1logger.CATEGORY))
 }
