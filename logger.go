@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"os"
@@ -33,7 +34,7 @@ type Logger struct {
 	logrus.Logger
 
 	Options  LogOptions
-	Resource string
+	Resource map[string]string
 	Category string
 }
 
@@ -105,6 +106,9 @@ func newAlways(_options LogOptions) *Logger {
 	}
 	_logger.SetLevel(l)
 
+	// initialize resource
+	_logger.Resource = make(map[string]string)
+
 	/* TODO: use goroutine id or thread id is better.
 	// Generate logId
 	logId := GenerateRunId() //
@@ -147,15 +151,38 @@ func (l *Logger) callerPrettyfier(caller *runtime.Frame) (function string, file 
 	return function, file
 }
 
+// parse resource
+func (l *Logger) parseResource(resource string) (string, string) {
+	idx := strings.Index(resource, ":")
+	if idx == -1 {
+		return "X", resource // X: means unknown resource type.
+	} else {
+		return string(resource[:idx]), string(resource[idx+1:])
+	}
+}
+
+// convert map to string and separated by ','.
+func (l *Logger) createKeyValuePairs(m map[string]string) string {
+	b := &bytes.Buffer{}
+	for key, value := range m {
+		if b.Len() > 0 {
+			fmt.Fprintf(b, ", ")
+		}
+		fmt.Fprintf(b, "%s:%s", key, value)
+	}
+	return b.String()
+}
+
 // SetResource set resource.
 func (l *Logger) SetResource(resource string) *Logger {
-	l.Resource = resource
+	t, id := l.parseResource(resource)
+	l.Resource[t] = id
 	return l
 }
 
 // ClearResource clear resource.
 func (l *Logger) ClearResource() *Logger {
-	l.Resource = ""
+	l.Resource = make(map[string]string)
 	return l
 }
 
@@ -200,7 +227,7 @@ func (h LoggerHook) Levels() []logrus.Level {
 // Fire The place to modify entry.Data.
 func (h LoggerHook) Fire(entry *logrus.Entry) error {
 	if len(h.Logger.Resource) > 0 {
-		entry.Data[RESOURCE] = h.Logger.Resource
+		entry.Data[RESOURCE] = h.Logger.createKeyValuePairs(h.Logger.Resource)
 	}
 	if len(h.Logger.Category) > 0 {
 		entry.Data[CATEGORY] = h.Logger.Category
