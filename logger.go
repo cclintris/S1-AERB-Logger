@@ -34,9 +34,18 @@ const (
 type Logger struct {
 	logrus.Logger
 
-	Options  LogOptions
-	Resource map[string]string
-	Category string
+	Options LogOptions
+	/*
+		Resources       map[string]string
+		ResourcesString string
+	*/
+	Resources *Resources
+	Category  string
+}
+
+type Resources struct {
+	typeMap    map[string]string // resource type map
+	printedStr string
 }
 
 // LoggerHook ...
@@ -108,7 +117,8 @@ func newAlways(_options LogOptions) *Logger {
 	_logger.SetLevel(l)
 
 	// initialize resource
-	_logger.Resource = make(map[string]string)
+	_logger.Resources = &Resources{}
+	_logger.Resources.Clear()
 
 	/* TODO: use goroutine id or thread id is better.
 	// Generate logId
@@ -128,6 +138,63 @@ func GenerateRunId() string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+// //////////////////////////////////////////////////////////////////////////////
+// Resources
+// //////////////////////////////////////////////////////////////////////////////
+// Clear clear all resource types.
+func (r *Resources) Clear() *Resources {
+	r.typeMap = make(map[string]string)
+	r.printedStr = ""
+	return r
+}
+
+// parseResource parse resource
+func (r *Resources) parseResource(resource string) (string, string) {
+	idx := strings.Index(resource, ":")
+	if idx == -1 {
+		return "X", resource // X: means unknown resource type.
+	} else {
+		return string(resource[:idx]), string(resource[idx+1:])
+	}
+}
+
+// createKeyValuePairs convert map to string and separated by ','.
+func (r *Resources) createKeyValuePairs(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	b := &bytes.Buffer{}
+	for _, k := range keys {
+		if b.Len() > 0 {
+			fmt.Fprintf(b, ", ")
+		}
+		fmt.Fprintf(b, "%s:%s", k, m[k])
+	}
+	return b.String()
+}
+
+// Set set resource type.
+func (r *Resources) Set(resource string) *Resources {
+	t, id := r.parseResource(resource)
+	r.typeMap[t] = id
+	r.printedStr = r.createKeyValuePairs(r.typeMap)
+	return r
+}
+
+// Unset unset specific resource type.
+func (r *Resources) Unset(resourceType string) *Resources {
+	delete(r.typeMap, resourceType)
+	r.printedStr = r.createKeyValuePairs(r.typeMap)
+	return r
+}
+
+func (r *Resources) String() string {
+	return r.printedStr
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -152,50 +219,21 @@ func (l *Logger) callerPrettyfier(caller *runtime.Frame) (function string, file 
 	return function, file
 }
 
-// parse resource
-func (l *Logger) parseResource(resource string) (string, string) {
-	idx := strings.Index(resource, ":")
-	if idx == -1 {
-		return "X", resource // X: means unknown resource type.
-	} else {
-		return string(resource[:idx]), string(resource[idx+1:])
-	}
-}
-
-// convert map to string and separated by ','.
-func (l *Logger) createKeyValuePairs(m map[string]string) string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	b := &bytes.Buffer{}
-	for _, k := range keys {
-		if b.Len() > 0 {
-			fmt.Fprintf(b, ", ")
-		}
-		fmt.Fprintf(b, "%s:%s", k, m[k])
-	}
-	return b.String()
-}
-
 // SetResource set resource.
 func (l *Logger) SetResource(resource string) *Logger {
-	t, id := l.parseResource(resource)
-	l.Resource[t] = id
+	l.Resources.Set(resource)
 	return l
 }
 
 // UnsetResource set resource.
 func (l *Logger) UnsetResource(resourceType string) *Logger {
-	delete(l.Resource, resourceType)
+	l.Resources.Unset(resourceType)
 	return l
 }
 
 // ClearResource clear resource.
 func (l *Logger) ClearResource() *Logger {
-	l.Resource = make(map[string]string)
+	l.Resources.Clear()
 	return l
 }
 
@@ -239,8 +277,8 @@ func (h LoggerHook) Levels() []logrus.Level {
 
 // Fire The place to modify entry.Data.
 func (h LoggerHook) Fire(entry *logrus.Entry) error {
-	if len(h.Logger.Resource) > 0 {
-		entry.Data[RESOURCE] = h.Logger.createKeyValuePairs(h.Logger.Resource)
+	if len(h.Logger.Resources.String()) > 0 {
+		entry.Data[RESOURCE] = h.Logger.Resources.String()
 	}
 	if len(h.Logger.Category) > 0 {
 		entry.Data[CATEGORY] = h.Logger.Category
