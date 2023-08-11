@@ -2,7 +2,10 @@ package logger
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"runtime"
@@ -12,6 +15,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	. "gitlab-smartgaia.sercomm.com/s1util/logger/buffer"
+	. "gitlab-smartgaia.sercomm.com/s1util/logger/buffer/util"
 )
 
 // LogOptions ...
@@ -20,7 +25,7 @@ type LogOptions uint16
 const (
 	OPT_ALL_ENABLED       LogOptions = 0xFFFF
 	OPT_ALL_DISABLED      LogOptions = 0x0000
-	OPT_DEAFULT           LogOptions = 0x0003
+	OPT_DEFAULT           LogOptions = 0x0003
 	OPT_HAS_REPORT_CALLER LogOptions = 0x0001
 	OPT_HAS_SHORT_CALLER  LogOptions = 0x0002
 
@@ -28,6 +33,9 @@ const (
 	FUNCTION string = "func"
 	RESOURCE string = "res"
 	CATEGORY string = "cat"
+
+	BUFFER_MODE string = "BUFFER_MODE"
+	PLAIN_MODE  string = "PLAIN_MODE"
 )
 
 // Logger struct
@@ -41,6 +49,18 @@ type Logger struct {
 	*/
 	Resources *Resources
 	Category  string
+	Buffer    *RingBuffer
+	Mode      string
+}
+
+// Log struct
+type Log struct {
+	File     string       `json:"file"`
+	Function string       `json:"func"`
+	Level    logrus.Level `json:"level"`
+	Message  string       `json:"msg"`
+	Resource interface{}  `json:"res"`
+	Time     time.Time    `json:"time"`
 }
 
 type Resources struct {
@@ -55,16 +75,45 @@ type LoggerHook struct {
 	Logger *Logger
 }
 
+// LoggerHookBuffer ...
+type LoggerHookBuffer struct {
+	logrus.Hook
+
+	Logger *Logger
+}
+
+// LoggerHookFlush ...
+type LoggerHookFlush struct {
+	logrus.Hook
+
+	Logger *Logger
+}
+
+// LoggerHookPlain ...
+type LoggerHookPlain struct {
+	logrus.Hook
+
+	Logger *Logger
+}
+
 // Implement Singleton pattern
 var (
 	once    sync.Once
 	logger  *Logger
-	defOpts LogOptions = OPT_DEAFULT
+	defOpts LogOptions = OPT_DEFAULT
+)
+
+// Hookname String
+var (
+	LOGGER_HOOK        = "logger.LoggerHook"
+	LOGGER_HOOK_BUFFER = "logger.LoggerHookBuffer"
+	LOGGER_HOOK_FLUSH  = "logger.LoggerHookFlush"
+	LOGGER_HOOK_PLAIN  = "logger.LoggerHookPlain"
 )
 
 // New is a function to obtain a singleton instance of Logger.
 func New() *Logger {
-	return new(OPT_DEAFULT)
+	return new(OPT_DEFAULT)
 }
 
 // NewWithOptions is a function to obtain and initialized a singleton instance of Logger with options.
@@ -101,20 +150,19 @@ func newAlways(_options LogOptions) *Logger {
 		CallerPrettyfier: _logger.callerPrettyfier,
 	})
 
-	// Set Hookers
+	// Set initial hooks.
 	_logger.Hooks.Add(LoggerHook{Logger: _logger})
+	_logger.Hooks.Add(LoggerHookBuffer{Logger: _logger})
+	_logger.Hooks.Add(LoggerHookFlush{Logger: _logger})
+	_logger.Hooks.Add(LoggerHookPlain{Logger: _logger})
 
-	//
 	if _logger.Options&OPT_HAS_REPORT_CALLER > 0 {
 		_logger.SetReportCaller(true)
 	}
 
 	// Set log level.
-	l, err := logrus.ParseLevel(os.Getenv("LOG_LEVEL"))
-	if nil != err {
-		l = logrus.InfoLevel
-	}
-	_logger.SetLevel(l)
+	// Set to Debug strictly. All behavior will be controlled by hooks instead of third party specification.
+	_logger.SetLevel(logrus.DebugLevel)
 
 	// initialize resource
 	_logger.Resources = &Resources{}
@@ -125,6 +173,34 @@ func newAlways(_options LogOptions) *Logger {
 	logId := GenerateRunId() //
 	instance.WithFields(logrus.Fields{"logId": logId})
 	*/
+
+	// initialize buffer
+	_logger.Buffer = &RingBuffer{}
+
+	dbs, err := ParseUnit(os.Getenv("DEFAULT_BUFFER_SIZE"))
+	if err != nil {
+		dbs, _ = ParseUnit("1 MB")
+	}
+
+	mbs, err := ParseUnit(os.Getenv("MAXIMUM_BUFFER_SIZE"))
+	if err != nil {
+		mbs, _ = ParseUnit("5 MB")
+	}
+
+	extCoef, err := ParseUnit((os.Getenv("EXTEND_COEFFICIENT")))
+	if err != nil {
+		extCoef, _ = ParseUnit("2 MB")
+	}
+
+	_logger.Buffer.Init(dbs, mbs, extCoef)
+
+	// set initial logger mode
+	if _logger.Mode != BUFFER_MODE {
+		_logger.Mode = BUFFER_MODE
+	}
+
+	// disable logrus ability by default
+	_logger.Disable()
 
 	return _logger
 }
@@ -249,18 +325,86 @@ func (l *Logger) ClearCategory() *Logger {
 	return l
 }
 
-// ClearAll clear all extra fields.
+// ClearAll clear all extra fields and clears buffered logs.
 func (l *Logger) ClearAll() *Logger {
 	l.ClearResource()
 	l.ClearCategory()
+	l.Mode = BUFFER_MODE
+	l.Buffer.Reset()
+	l.Recover()
 	return l
+}
+
+// Disable logrus.
+func (l *Logger) Disable() {
+	if l.Out == io.Discard {
+		return
+	}
+	l.SetOutput(io.Discard)
+}
+
+// Restore logrus.
+func (l *Logger) Recover() {
+	if l.Out == os.Stderr {
+		return
+	}
+	l.SetOutput(os.Stderr)
+}
+
+// Wrap and construct ringlog given logrus entry
+func (l *Logger) logWrapper(entry *logrus.Entry) *Log {
+	function, file := l.callerPrettyfier(entry.Caller)
+
+	return &Log{
+		Message:  entry.Message,
+		Level:    entry.Level,
+		Time:     entry.Time,
+		Function: function,
+		File:     file,
+		Resource: entry.Data[RESOURCE],
+	}
+}
+
+// Replace logrus hooks
+func (l *Logger) updateHooks(removeHooks []string, newHooks []logrus.Hook) {
+	updatedHooks := make(logrus.LevelHooks)
+
+	for level, hooks := range l.Logger.Hooks {
+		for _, h := range hooks {
+			hookName := fmt.Sprintf("%T", h)
+			if !matchHookName(hookName, removeHooks) {
+				updatedHooks[level] = append(updatedHooks[level], h)
+			}
+		}
+	}
+
+	l.ReplaceHooks(updatedHooks)
+
+	for _, newHook := range newHooks {
+		l.AddHook(newHook)
+	}
+}
+
+// Check if a hook matches a given hookname
+func matchHookName(hookName string, matcher []string) bool {
+	for _, h := range matcher {
+		if h == hookName {
+			return true
+		}
+	}
+	return false
+}
+
+// Restore logrus hooks
+func (l *Logger) restoreHooks(hooks logrus.LevelHooks) {
+	_ = l.ReplaceHooks(hooks)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // LoggerHook
 ////////////////////////////////////////////////////////////////////////////////
 
-// Levels ...
+// Levels for LoggerHook ...
 func (h LoggerHook) Levels() []logrus.Level {
 
 	levels := []logrus.Level{
@@ -275,13 +419,139 @@ func (h LoggerHook) Levels() []logrus.Level {
 	return levels
 }
 
-// Fire The place to modify entry.Data.
+// Fire to modify entry.Data.
 func (h LoggerHook) Fire(entry *logrus.Entry) error {
+	// fmt.Println("[logrus hook]: enter LoggerHook")
+
 	if len(h.Logger.Resources.String()) > 0 {
 		entry.Data[RESOURCE] = h.Logger.Resources.String()
 	}
 	if len(h.Logger.Category) > 0 {
 		entry.Data[CATEGORY] = h.Logger.Category
 	}
+	return nil
+}
+
+// Levels for LoggerHookBuffer ...
+func (hBuffer LoggerHookBuffer) Levels() []logrus.Level {
+
+	levels := []logrus.Level{
+		logrus.WarnLevel,
+		logrus.InfoLevel,
+		logrus.DebugLevel,
+		logrus.TraceLevel,
+	}
+	return levels
+}
+
+// Fire to buffer logs
+func (hBuffer LoggerHookBuffer) Fire(entry *logrus.Entry) error {
+	if hBuffer.Logger.Mode != BUFFER_MODE {
+		return nil
+	}
+
+	// fmt.Println("[logrus hook]: enter LoggerHookBuffer")
+
+	// buffer logs
+	log := hBuffer.Logger.logWrapper(entry)
+	jLog, err := json.Marshal(log)
+	if err != nil {
+		return err
+	}
+
+	// buffer length of log to be written in little endian
+	sLog := string(jLog)
+	l := len(sLog)
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf, uint32(l))
+
+	n, err := hBuffer.Logger.Buffer.Write(buf)
+	if n != 4 || err != nil {
+		return err
+	}
+
+	// buffer actual log
+	n, err = hBuffer.Logger.Buffer.Write([]byte(sLog))
+	if n != l || err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Levels for LoggerHookFlush ...
+func (hFlush LoggerHookFlush) Levels() []logrus.Level {
+
+	levels := []logrus.Level{
+		logrus.PanicLevel,
+		logrus.FatalLevel,
+		logrus.ErrorLevel,
+	}
+	return levels
+}
+
+// Fire to flush out logs
+func (hFlush LoggerHookFlush) Fire(entry *logrus.Entry) error {
+
+	if hFlush.Logger.Mode != BUFFER_MODE {
+		return nil
+	}
+
+	// fmt.Println("[logrus hook]: enter LoggerHookFlush")
+
+	// flush all logs from buffer
+	for !hFlush.Logger.Buffer.IsEmpty() {
+		buf := make([]byte, 4)
+		n, err := hFlush.Logger.Buffer.Read(buf)
+		if n != 4 || err != nil {
+			return err
+		}
+
+		l := int(binary.LittleEndian.Uint32(buf))
+		buf = make([]byte, l)
+		n, err = hFlush.Logger.Buffer.Read(buf)
+		if n != l || err != nil {
+			return err
+		}
+
+		stdLog := bytes.NewBuffer(buf).String()
+		fmt.Println(stdLog)
+	}
+
+	hFlush.Logger.Mode = PLAIN_MODE
+
+	return nil
+}
+
+// Levels for LoggerHookPlain ...
+func (hPlain LoggerHookPlain) Levels() []logrus.Level {
+
+	levels := []logrus.Level{
+		logrus.PanicLevel,
+		logrus.FatalLevel,
+		logrus.ErrorLevel,
+		logrus.WarnLevel,
+		logrus.InfoLevel,
+		logrus.DebugLevel,
+		logrus.TraceLevel,
+	}
+	return levels
+}
+
+// Fire to console log to standard output
+func (hPlain LoggerHookPlain) Fire(entry *logrus.Entry) error {
+
+	if hPlain.Logger.Mode != PLAIN_MODE {
+		return nil
+	}
+
+	// fmt.Println("[logrus hook]: enter LoggerHookPlain")
+
+	log := hPlain.Logger.logWrapper(entry)
+	jLog, err := json.Marshal(log)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(jLog))
 	return nil
 }
