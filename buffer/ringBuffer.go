@@ -274,7 +274,7 @@ func (rb *RingBuffer) Write(p []byte) (n int, err error) {
 	if n > free {
 		if !rb.isMaximumReached() {
 			// allocate additional (n - free) memory
-			rb.malloc(n - free)
+			rb.alloc(n - free)
 		} else {
 			// overwrite old logs
 			rb.overwrite(free, n, true)
@@ -308,7 +308,7 @@ func (rb *RingBuffer) WriteByte(b byte) error {
 	if rb.Free() < 1 {
 		if !rb.isMaximumReached() {
 			// allocate additional 1 byte memory
-			rb.malloc(1)
+			rb.alloc(1)
 		} else {
 			// overwrite old data
 			rb.overwrite(rb.Free(), 1, false)
@@ -453,7 +453,7 @@ func (rb *RingBuffer) overwrite(free int, need int, logOverriding bool) error {
 }
 
 // Allocate additional memory for buffer specified by len.
-func (rb *RingBuffer) malloc(len int) {
+func (rb *RingBuffer) alloc(len int) {
 	vLen := rb.VirtualLength()
 	newSize := rb.extend(rb.size + len)
 	newBuf := make([]byte, newSize)

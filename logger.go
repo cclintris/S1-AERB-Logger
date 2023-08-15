@@ -446,6 +446,7 @@ func (hBuffer LoggerHookBuffer) Levels() []logrus.Level {
 
 // Fire to buffer logs
 func (hBuffer LoggerHookBuffer) Fire(entry *logrus.Entry) error {
+
 	if hBuffer.Logger.Mode != BUFFER_MODE {
 		return nil
 	}
