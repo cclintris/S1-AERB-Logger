@@ -54,7 +54,7 @@ type RingBuffer struct {
 *************************************************************
 */
 
-// Returns a ringbuffer initialized with a given default size and a given maximum size.
+// Returns a ringbuffer initialized with a given default size, maximum size and extension coefficient.
 func (rb *RingBuffer) Init(defaultSize int, maxSize int, extCoef int) *RingBuffer {
 	once.Do(func() {
 		rb.buf = make([]byte, defaultSize)
@@ -473,7 +473,7 @@ func (rb *RingBuffer) alloc(len int) {
 https://github.com/golang/go/blob/ac0ba6707c1655ea4316b41d06571a0303cc60eb/src/runtime/slice.go#L125
 
 Depending on the extending coefficient:
- 1. If the expected capacity is two times larger than the current capacity, extend two times dircetly
+ 1. If the expected capacity is two times larger than the current capacity, extend two times directly
  2. If the expected capacity is NOT two times larger than the current capacity
     a. Check if the current capacity has reached the extending coefficient
     a.1 If no, extend two times directly

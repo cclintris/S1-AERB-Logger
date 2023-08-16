@@ -200,7 +200,7 @@ func newAlways(_options LogOptions) *Logger {
 	}
 
 	// disable logrus ability by default
-	_logger.Disable()
+	_logger.disable()
 
 	return _logger
 }
@@ -331,12 +331,12 @@ func (l *Logger) ClearAll() *Logger {
 	l.ClearCategory()
 	l.Mode = BUFFER_MODE
 	l.Buffer.Reset()
-	l.Recover()
+	l.recover()
 	return l
 }
 
 // Disable logrus.
-func (l *Logger) Disable() {
+func (l *Logger) disable() {
 	if l.Out == io.Discard {
 		return
 	}
@@ -344,7 +344,7 @@ func (l *Logger) Disable() {
 }
 
 // Restore logrus.
-func (l *Logger) Recover() {
+func (l *Logger) recover() {
 	if l.Out == os.Stderr {
 		return
 	}
