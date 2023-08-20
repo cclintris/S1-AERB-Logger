@@ -328,3 +328,10 @@ Instead of allocating slices of bytes directly for the ringbuffer, a better way 
   - update a `pw` notating a physical write pointer
 
 May also need to handle memory addresses with `unsafe` package, and additional offsets to compute the physical read and write pointer.
+
+## References
+
+| Description                                       | Link                                                         |
+| :------------------------------------------------ | :----------------------------------------------------------- |
+| Saving on AWS Lambda Amazon CloudWatch Logs costs | https://cloudash.dev/blog/saving-aws-lambda-cloudwatch-costs |
+| go ringbuffer                                     | https://github.com/smallnest/ringbuffer                      |
